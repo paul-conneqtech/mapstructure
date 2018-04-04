@@ -357,6 +357,73 @@ func ExampleDecodeWithEmbeddedSlice() {
 	// mapstructure.Items{Categories:[]string{"rabbit", "bunny", "frog"}, Peoples:[]mapstructure.People{mapstructure.People{Age:10, Animals:[]mapstructure.Animal{mapstructure.Animal{Barks:"yes"}, mapstructure.Animal{Barks:"no"}}}, mapstructure.People{Age:11, Animals:[]mapstructure.Animal(nil)}}}
 }
 
+func ExampleDecodeWithEmbeddedSliceSquash() {
+	var document string = `{
+	  "cobrandId": 10010352,
+	  "channelId": -1,
+	  "locale": "en_US",
+	  "tncVersion": 2,
+	  "categories":[{
+	"name":	"rabbit"},{"name":	"bunny"},{"name":	"frog"}],
+	  "people": [
+	 	{
+			"name": "jack",
+			"age": {
+				"birth":10,
+				"year":2000,
+				"animals": [
+					{
+						"barks":"yes",
+						"tail":"yes"
+					},
+					{
+						"barks":"no",
+						"tail":"yes"
+					}
+				]
+			}
+		},
+		{
+			"name": "jill",
+			"age": {
+				"birth":11,
+				"year":2001
+			}
+		}
+	  ]
+}`
+
+	type Animal struct {
+		Barks string `jpath:"barks"`
+	}
+
+	type Category struct {
+		Name string `jpath:"name"`
+	}
+
+	type People struct {
+		Category `jpath:",squash"`
+		Age     int      `jpath:"age.birth"` // jpath is relative to the array
+		Animals []Animal `jpath:"age.animals"`
+	}
+
+	type Items struct {
+		Categories []Category `jpath:"categories"`
+		Peoples    []People `jpath:"people"` // Specify the location of the array
+	}
+
+	docScript := []byte(document)
+	var docMap map[string]interface{}
+	json.Unmarshal(docScript, &docMap)
+
+	var items Items
+	DecodePath(docMap, &items)
+
+	fmt.Printf("%#v", items)
+	// Output:
+	// mapstructure.Items{Categories:[]mapstructure.Category{mapstructure.Category{Name:"rabbit"}, mapstructure.Category{Name:"bunny"}, mapstructure.Category{Name:"frog"}}, Peoples:[]mapstructure.People{mapstructure.People{Category:mapstructure.Category{Name:"jack"}, Age:10, Animals:[]mapstructure.Animal{mapstructure.Animal{Barks:"yes"}, mapstructure.Animal{Barks:"no"}}}, mapstructure.People{Category:mapstructure.Category{Name:"jill"}, Age:11, Animals:[]mapstructure.Animal(nil)}}}
+}
+
 func ExampleDecodeWithAbstractField() {
 	var document = `{"Error":[{"errorDetail":"Invalid Cobrand Credentials"}]}`
 

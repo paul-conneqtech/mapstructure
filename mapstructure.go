@@ -344,6 +344,7 @@ func (d *Decoder) DecodePath(m map[string]interface{}, rawVal interface{}) (bool
 		typeField := val.Type().Field(i)
 		tag := typeField.Tag
 		tagValue := tag.Get(d.config.TagName)
+		tagValue = strings.SplitN(tagValue, ",", 2)[0]
 
 		// Is this a field without a tag
 		if tagValue == "" {
