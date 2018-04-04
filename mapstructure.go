@@ -385,7 +385,10 @@ func (d *Decoder) DecodePath(m map[string]interface{}, rawVal interface{}) (bool
 				}
 
 				// We have a slice
-				mapSlice := data.([]interface{})
+				mapSlice, ok := data.([]interface{})
+				if ok == false {
+					goto normal_decode
+				}
 				if len(mapSlice) > 0 {
 					// Test if this is a slice of more maps
 					_, ok := mapSlice[0].(map[string]interface{})
@@ -503,6 +506,26 @@ func (d *Decoder) findData(m map[string]interface{}, keys []string) interface{} 
 	}
 
 	if value, ok := m[keys[0]]; ok == true {
+		val := reflect.ValueOf(value)
+		if val.Kind() == reflect.Slice {
+			if val.Len() == 0 {
+				return nil
+			}
+			if m, ok := val.Index(0).Interface().(map[string]interface{}); ok == true {
+				first := d.findData(m, keys[1:])
+
+				s := reflect.TypeOf(first)
+				slice := reflect.MakeSlice(reflect.SliceOf(s), val.Len(), val.Len())
+				slice.Index(0).Set(reflect.ValueOf(first))
+				for i := 1; i < val.Len(); i++ {
+					data := d.findData(val.Index(i).Interface().(map[string]interface{}), keys[1:])
+					if data != nil && reflect.TypeOf(data).Kind() == reflect.TypeOf(first).Kind() {
+						slice.Index(i).Set(reflect.ValueOf(data))
+					}
+				}
+				return slice.Interface()
+			}
+		}
 		if m, ok := value.(map[string]interface{}); ok == true {
 			return d.findData(m, keys[1:])
 		}
