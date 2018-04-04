@@ -181,8 +181,8 @@ func ExampleDecode_embeddedStruct() {
 		City string
 	}
 	type Person struct {
-		Family    `mapstructure:",squash"`
-		Location  `mapstructure:",squash"`
+		Family   `mapstructure:",squash"`
+		Location `mapstructure:",squash"`
 		FirstName string
 	}
 
@@ -258,11 +258,11 @@ func ExampleDecodePath() {
 	}
 
 	type User struct {
-		Session      string   `jpath:"userContext.cobrandConversationCredentials.sessionToken"`
-		CobrandId    int      `jpath:"userContext.cobrandId"`
-		UserType     UserType `jpath:"userType"`
-		LoginName    string   `jpath:"loginName"`
-		NumberFormat          // This can also be a pointer to the struct (*NumberFormat)
+		Session   string   `jpath:"userContext.cobrandConversationCredentials.sessionToken"`
+		CobrandId int      `jpath:"userContext.cobrandId"`
+		UserType  UserType `jpath:"userType"`
+		LoginName string   `jpath:"loginName"`
+		NumberFormat // This can also be a pointer to the struct (*NumberFormat)
 	}
 
 	docScript := []byte(document)
@@ -271,6 +271,88 @@ func ExampleDecodePath() {
 
 	var user User
 	DecodePath(docMap, &user)
+
+	fmt.Printf("%#v", user)
+	// Output:
+	// mapstructure.User{Session:"06142010_1:b8d011fefbab8bf1753391b074ffedf9578612d676ed2b7f073b5785b", CobrandId:10000004, UserType:mapstructure.UserType{UserTypeId:1, UserTypeName:"normal_user"}, LoginName:"sptest1", NumberFormat:mapstructure.NumberFormat{DecimalSeparator:".", GroupingSeparator:",", GroupPattern:"###,##0.##"}}
+}
+
+func ExampleDecoderDecodePath() {
+	var document string = `{
+    "userContext": {
+        "conversationCredentials": {
+            "sessionToken": "06142010_1:75bf6a413327dd71ebe8f3f30c5a4210a9b11e93c028d6e11abfca7ff"
+        },
+        "valid": true,
+        "isPasswordExpired": false,
+        "cobrandId": 10000004,
+        "channelId": -1,
+        "locale": "en_US",
+        "tncVersion": 2,
+        "applicationId": "17CBE222A42161A3FF450E47CF4C1A00",
+        "cobrandConversationCredentials": {
+            "sessionToken": "06142010_1:b8d011fefbab8bf1753391b074ffedf9578612d676ed2b7f073b5785b"
+        },
+        "preferenceInfo": {
+            "currencyCode": "USD",
+            "timeZone": "PST",
+            "dateFormat": "MM/dd/yyyy",
+            "currencyNotationType": {
+                "currencyNotationType": "SYMBOL"
+            },
+            "numberFormat": {
+                "decimalSeparator": ".",
+                "groupingSeparator": ",",
+                "groupPattern": "###,##0.##"
+            }
+        }
+    },
+    "lastLoginTime": 1375686841,
+    "loginCount": 299,
+    "passwordRecovered": false,
+    "emailAddress": "johndoe@email.com",
+    "loginName": "sptest1",
+    "userId": 10483860,
+    "userType":
+        {
+        "userTypeId": 1,
+        "userTypeName": "normal_user"
+        }
+}`
+
+	type UserType struct {
+		UserTypeId   int
+		UserTypeName string
+	}
+
+	type NumberFormat struct {
+		DecimalSeparator  string `mapstructure:"userContext.preferenceInfo.numberFormat.decimalSeparator"`
+		GroupingSeparator string `mapstructure:"userContext.preferenceInfo.numberFormat.groupingSeparator"`
+		GroupPattern      string `mapstructure:"userContext.preferenceInfo.numberFormat.groupPattern"`
+	}
+
+	type User struct {
+		Session   string   `mapstructure:"userContext.cobrandConversationCredentials.sessionToken"`
+		CobrandId int      `mapstructure:"userContext.cobrandId"`
+		UserType  UserType `mapstructure:"userType"`
+		LoginName string   `mapstructure:"loginName"`
+		NumberFormat // This can also be a pointer to the struct (*NumberFormat)
+	}
+
+	docScript := []byte(document)
+	var docMap map[string]interface{}
+	json.Unmarshal(docScript, &docMap)
+
+	var user User
+
+	config := &DecoderConfig{
+		Metadata:    nil,
+		TagName:     "mapstructure",
+		Result:      &user,
+	}
+
+	decoder, _ := NewDecoder(config)
+	decoder.DecodePath(docMap, &user)
 
 	fmt.Printf("%#v", user)
 	// Output:
@@ -290,6 +372,33 @@ func ExampleDecodeSlicePath() {
 
 	var myslice []NameDoc
 	DecodeSlicePath(sliceMap, &myslice)
+
+	fmt.Printf("%#v", myslice)
+	// Output:
+	// []mapstructure.NameDoc{mapstructure.NameDoc{Name:"bill"}, mapstructure.NameDoc{Name:"lisa"}}
+}
+
+func ExampleDecoderDecodeSlicePath() {
+	var document = `[{"name":"bill"},{"name":"lisa"}]`
+
+	type NameDoc struct {
+		Name string `jpath:"name"`
+	}
+
+	sliceScript := []byte(document)
+	var sliceMap []map[string]interface{}
+	json.Unmarshal(sliceScript, &sliceMap)
+
+	var myslice []NameDoc
+
+	config := &DecoderConfig{
+		Metadata:    nil,
+		TagName:     "jpath",
+		Result:      &myslice,
+	}
+
+	decoder, _ := NewDecoder(config)
+	decoder.DecodeSlicePath(sliceMap, &myslice)
 
 	fmt.Printf("%#v", myslice)
 	// Output:
@@ -357,40 +466,49 @@ func ExampleDecodeWithEmbeddedSlice() {
 	// mapstructure.Items{Categories:[]string{"rabbit", "bunny", "frog"}, Peoples:[]mapstructure.People{mapstructure.People{Age:10, Animals:[]mapstructure.Animal{mapstructure.Animal{Barks:"yes"}, mapstructure.Animal{Barks:"no"}}}, mapstructure.People{Age:11, Animals:[]mapstructure.Animal(nil)}}}
 }
 
-func ExampleDecodeWithEmbeddedSliceSquash() {
+func ExampleDecodeWithEmbeddedSliceStructSquash() {
 	var document string = `{
-	  "cobrandId": 10010352,
-	  "channelId": -1,
-	  "locale": "en_US",
-	  "tncVersion": 2,
-	  "categories":[{
-	"name":	"rabbit"},{"name":	"bunny"},{"name":	"frog"}],
-	  "people": [
-	 	{
-			"name": "jack",
-			"age": {
-				"birth":10,
-				"year":2000,
-				"animals": [
-					{
-						"barks":"yes",
-						"tail":"yes"
-					},
-					{
-						"barks":"no",
-						"tail":"yes"
-					}
-				]
-			}
-		},
-		{
-			"name": "jill",
-			"age": {
-				"birth":11,
-				"year":2001
-			}
-		}
-	  ]
+  "cobrandId": 10010352,
+  "channelId": -1,
+  "locale": "en_US",
+  "tncVersion": 2,
+  "categories": [
+    {
+      "name": "rabbit"
+    },
+    {
+      "name": "bunny"
+    },
+    {
+      "name": "frog"
+    }
+  ],
+  "people": [
+    {
+      "name": "jack",
+      "age": {
+        "birth": 10,
+        "year": 2000,
+        "animals": [
+          {
+            "barks": "yes",
+            "tail": "yes"
+          },
+          {
+            "barks": "no",
+            "tail": "yes"
+          }
+        ]
+      }
+    },
+    {
+      "name": "jill",
+      "age": {
+        "birth": 11,
+        "year": 2001
+      }
+    }
+  ]
 }`
 
 	type Animal struct {
@@ -402,14 +520,14 @@ func ExampleDecodeWithEmbeddedSliceSquash() {
 	}
 
 	type People struct {
-		Category `jpath:",squash"`
+		Category         `jpath:",squash"`
 		Age     int      `jpath:"age.birth"` // jpath is relative to the array
 		Animals []Animal `jpath:"age.animals"`
 	}
 
 	type Items struct {
 		Categories []Category `jpath:"categories"`
-		Peoples    []People `jpath:"people"` // Specify the location of the array
+		Peoples    []People   `jpath:"people"` // Specify the location of the array
 	}
 
 	docScript := []byte(document)

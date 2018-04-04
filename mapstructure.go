@@ -202,15 +202,6 @@ func DecodePath(m map[string]interface{}, rawVal interface{}) error {
 // DecodeSlicePath decodes a slice of maps against a slice of structures that
 // contain specified tags
 func DecodeSlicePath(ms []map[string]interface{}, rawSlice interface{}) error {
-	reflectRawSlice := reflect.TypeOf(rawSlice)
-	rawKind := reflectRawSlice.Kind()
-	rawElement := reflectRawSlice.Elem()
-
-	if (rawKind == reflect.Ptr && rawElement.Kind() != reflect.Slice) ||
-		(rawKind != reflect.Ptr && rawKind != reflect.Slice) {
-		return fmt.Errorf("Incompatible Value, Looking For Slice : %v : %v", rawKind, rawElement.Kind())
-	}
-
 	config := &DecoderConfig{
 		Metadata: nil,
 		Result:   nil,
@@ -219,6 +210,19 @@ func DecodeSlicePath(ms []map[string]interface{}, rawSlice interface{}) error {
 	decoder, err := NewPathDecoder(config)
 	if err != nil {
 		return err
+	}
+
+	return decoder.DecodeSlicePath(ms, rawSlice)
+}
+
+func (d *Decoder)DecodeSlicePath(ms []map[string]interface{}, rawSlice interface{}) error {
+	reflectRawSlice := reflect.TypeOf(rawSlice)
+	rawKind := reflectRawSlice.Kind()
+	rawElement := reflectRawSlice.Elem()
+
+	if (rawKind == reflect.Ptr && rawElement.Kind() != reflect.Slice) ||
+		(rawKind != reflect.Ptr && rawKind != reflect.Slice) {
+		return fmt.Errorf("Incompatible Value, Looking For Slice : %v : %v", rawKind, rawElement.Kind())
 	}
 
 	// Create a slice large enough to decode all the values
@@ -230,13 +234,13 @@ func DecodeSlicePath(ms []map[string]interface{}, rawSlice interface{}) error {
 		if sliceElementType.Kind() != reflect.Ptr {
 			// A slice of objects
 			obj := reflect.New(rawElement.Elem())
-			decoder.DecodePath(m, reflect.Indirect(obj))
+			d.DecodePath(m, reflect.Indirect(obj))
 			indexVal := valSlice.Index(index)
 			indexVal.Set(reflect.Indirect(obj))
 		} else {
 			// A slice of pointers
 			obj := reflect.New(rawElement.Elem().Elem())
-			decoder.DecodePath(m, reflect.Indirect(obj))
+			d.DecodePath(m, reflect.Indirect(obj))
 			indexVal := valSlice.Index(index)
 			indexVal.Set(obj)
 		}
