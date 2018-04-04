@@ -181,6 +181,72 @@ func WeakDecodeMetadata(input interface{}, output interface{}, metadata *Metadat
 	return decoder.Decode(input)
 }
 
+// DecodePath takes a map and uses reflection to convert it into the
+// given Go native structure. Tags are used to specify the mapping
+// between fields in the map and structure
+func DecodePath(m map[string]interface{}, rawVal interface{}) error {
+	config := &DecoderConfig{
+		Metadata: nil,
+		Result:   nil,
+	}
+
+	decoder, err := NewPathDecoder(config)
+	if err != nil {
+		return err
+	}
+
+	_, err = decoder.DecodePath(m, rawVal)
+	return err
+}
+
+// DecodeSlicePath decodes a slice of maps against a slice of structures that
+// contain specified tags
+func DecodeSlicePath(ms []map[string]interface{}, rawSlice interface{}) error {
+	reflectRawSlice := reflect.TypeOf(rawSlice)
+	rawKind := reflectRawSlice.Kind()
+	rawElement := reflectRawSlice.Elem()
+
+	if (rawKind == reflect.Ptr && rawElement.Kind() != reflect.Slice) ||
+		(rawKind != reflect.Ptr && rawKind != reflect.Slice) {
+		return fmt.Errorf("Incompatible Value, Looking For Slice : %v : %v", rawKind, rawElement.Kind())
+	}
+
+	config := &DecoderConfig{
+		Metadata: nil,
+		Result:   nil,
+	}
+
+	decoder, err := NewPathDecoder(config)
+	if err != nil {
+		return err
+	}
+
+	// Create a slice large enough to decode all the values
+	valSlice := reflect.MakeSlice(rawElement, len(ms), len(ms))
+
+	// Iterate over the maps and decode each one
+	for index, m := range ms {
+		sliceElementType := rawElement.Elem()
+		if sliceElementType.Kind() != reflect.Ptr {
+			// A slice of objects
+			obj := reflect.New(rawElement.Elem())
+			decoder.DecodePath(m, reflect.Indirect(obj))
+			indexVal := valSlice.Index(index)
+			indexVal.Set(reflect.Indirect(obj))
+		} else {
+			// A slice of pointers
+			obj := reflect.New(rawElement.Elem().Elem())
+			decoder.DecodePath(m, reflect.Indirect(obj))
+			indexVal := valSlice.Index(index)
+			indexVal.Set(obj)
+		}
+	}
+
+	// Set the new slice
+	reflect.ValueOf(rawSlice).Elem().Set(valSlice)
+	return nil
+}
+
 // NewDecoder returns a new decoder for the given configuration. Once
 // a decoder has been returned, the same configuration must not be used
 // again.
@@ -216,10 +282,132 @@ func NewDecoder(config *DecoderConfig) (*Decoder, error) {
 	return result, nil
 }
 
+// NewPathDecoder returns a new decoder for the given configuration.
+// This is used to decode path specific structures
+func NewPathDecoder(config *DecoderConfig) (*Decoder, error) {
+	if config.Metadata != nil {
+		if config.Metadata.Keys == nil {
+			config.Metadata.Keys = make([]string, 0)
+		}
+
+		if config.Metadata.Unused == nil {
+			config.Metadata.Unused = make([]string, 0)
+		}
+	}
+
+	if config.TagName == "" {
+		config.TagName = "mapstructure"
+	}
+
+	result := &Decoder{
+		config: config,
+	}
+
+	return result, nil
+}
+
 // Decode decodes the given raw interface to the target pointer specified
 // by the configuration.
 func (d *Decoder) Decode(input interface{}) error {
 	return d.decode("", input, reflect.ValueOf(d.config.Result).Elem())
+}
+
+// DecodePath decodes the raw interface against the map based on the
+// specified tags
+func (d *Decoder) DecodePath(m map[string]interface{}, rawVal interface{}) (bool, error) {
+	decoded := false
+
+	var val reflect.Value
+	reflectRawValue := reflect.ValueOf(rawVal)
+	kind := reflectRawValue.Kind()
+
+	// Looking for structs and pointers to structs
+	switch kind {
+	case reflect.Ptr:
+		val = reflectRawValue.Elem()
+		if val.Kind() != reflect.Struct {
+			return decoded, fmt.Errorf("Incompatible Type : %v : Looking For Struct", kind)
+		}
+	case reflect.Struct:
+		var ok bool
+		val, ok = rawVal.(reflect.Value)
+		if ok == false {
+			return decoded, fmt.Errorf("Incompatible Type : %v : Looking For reflect.Value", kind)
+		}
+	default:
+		return decoded, fmt.Errorf("Incompatible Type : %v", kind)
+	}
+
+	// Iterate over the fields in the struct
+	for i := 0; i < val.NumField(); i++ {
+		valueField := val.Field(i)
+		typeField := val.Type().Field(i)
+		tag := typeField.Tag
+		tagValue := tag.Get("jpath")
+
+		// Is this a field without a tag
+		if tagValue == "" {
+			if valueField.Kind() == reflect.Struct {
+				// We have a struct that may have indivdual tags. Process separately
+				d.DecodePath(m, valueField)
+				continue
+			} else if valueField.Kind() == reflect.Ptr && reflect.TypeOf(valueField).Kind() == reflect.Struct {
+				// We have a pointer to a struct
+				if valueField.IsNil() {
+					// Create the object since it doesn't exist
+					valueField.Set(reflect.New(valueField.Type().Elem()))
+					decoded, _ = d.DecodePath(m, valueField.Elem())
+					if decoded == false {
+						// If nothing was decoded for this object return the pointer to nil
+						valueField.Set(reflect.NewAt(valueField.Type().Elem(), nil))
+					}
+					continue
+				}
+
+				d.DecodePath(m, valueField.Elem())
+				continue
+			}
+		}
+
+		// Use mapstructure to populate the fields
+		keys := strings.Split(tagValue, ".")
+		data := d.findData(m, keys)
+		if data != nil {
+			if valueField.Kind() == reflect.Slice {
+				// Ignore a slice of maps - This sucks but not sure how to check
+				if strings.Contains(valueField.Type().String(), "map[") {
+					goto normal_decode
+				}
+
+				// We have a slice
+				mapSlice := data.([]interface{})
+				if len(mapSlice) > 0 {
+					// Test if this is a slice of more maps
+					_, ok := mapSlice[0].(map[string]interface{})
+					if ok == false {
+						goto normal_decode
+					}
+
+					// Extract the maps out and run it through DecodeSlicePath
+					ms := make([]map[string]interface{}, len(mapSlice))
+					for index, m2 := range mapSlice {
+						ms[index] = m2.(map[string]interface{})
+					}
+
+					DecodeSlicePath(ms, valueField.Addr().Interface())
+					continue
+				}
+			}
+		normal_decode:
+			decoded = true
+			err := d.decode("", data, valueField)
+			if err != nil {
+				return false, err
+			}
+		}
+	}
+
+	return decoded, nil
 }
 
 // Decodes an unknown data type into a specific reflection value.
@@ -298,6 +486,24 @@ func (d *Decoder) decode(name string, input interface{}, outVal reflect.Value) e
 	}
 
 	return err
+}
+
+// findData locates the data by walking the keys down the map
+func (d *Decoder) findData(m map[string]interface{}, keys []string) interface{} {
+	if len(keys) == 1 {
+		if value, ok := m[keys[0]]; ok == true {
+			return value
+		}
+		return nil
+	}
+
+	if value, ok := m[keys[0]]; ok == true {
+		if m, ok := value.(map[string]interface{}); ok == true {
+			return d.findData(m, keys[1:])
+		}
+	}
+
+	return nil
 }
 
 // This decodes a basic type (bool, int, string, etc.) and sets the

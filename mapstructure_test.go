@@ -1706,3 +1706,288 @@ func testArrayInput(t *testing.T, input map[string]interface{}, expected *Array)
 		}
 	}
 }
+
+func TestDecodePath(t *testing.T) {
+	var document string = `{
+    "userContext": {
+        "cobrandId": 10000004,
+        "channelId": -1,
+        "locale": "en_US",
+        "tncVersion": 2,
+        "applicationId": "17CBE222A42161A3FF450E47CF4C1A00",
+        "cobrandConversationCredentials": {
+            "sessionToken": "06142010_1:b8d011fefbab8bf1753391b074ffedf9578612d676ed2b7f073b5785b"
+        },
+		"preferenceInfo": {
+            "currencyCode": "USD",
+            "timeZone": "PST",
+            "dateFormat": "MM/dd/yyyy",
+            "currencyNotationType": {
+                "currencyNotationType": "SYMBOL"
+            },
+            "numberFormat": {
+                "decimalSeparator": ".",
+                "groupingSeparator": ",",
+                "groupPattern": "###,##0.##"
+            }
+        }
+    },
+    "loginName": "sptest1",
+    "userId": 10483860,
+    "userType":
+        {
+        "userTypeId": 1,
+        "userTypeName": "normal_user"
+        }
+}`
+
+	type UserType struct {
+		UserTypeId   int
+		UserTypeName string
+	}
+
+	type NumberFormat struct {
+		DecimalSeparator  string `jpath:"userContext.preferenceInfo.numberFormat.decimalSeparator"`
+		GroupingSeparator string `jpath:"userContext.preferenceInfo.numberFormat.groupingSeparator"`
+		GroupPattern      string `jpath:"userContext.preferenceInfo.numberFormat.groupPattern"`
+	}
+
+	type User struct {
+		Session   string   `jpath:"userContext.cobrandConversationCredentials.sessionToken"`
+		CobrandId int      `jpath:"userContext.cobrandId"`
+		UserType  UserType `jpath:"userType"`
+		LoginName string   `jpath:"loginName"`
+		*NumberFormat
+	}
+
+	docScript := []byte(document)
+	var docMap map[string]interface{}
+	err := json.Unmarshal(docScript, &docMap)
+	if err != nil {
+		t.Fatalf("Unable To Unmarshal Test Document, %s", err)
+	}
+
+	var user User
+	DecodePath(docMap, &user)
+
+	session := "06142010_1:b8d011fefbab8bf1753391b074ffedf9578612d676ed2b7f073b5785b"
+	if user.Session != session {
+		t.Errorf("user.Session should be '%s', we got '%s'", session, user.Session)
+	}
+
+	cobrandId := 10000004
+	if user.CobrandId != cobrandId {
+		t.Errorf("user.CobrandId should be '%d', we got '%d'", cobrandId, user.CobrandId)
+	}
+
+	loginName := "sptest1"
+	if user.LoginName != loginName {
+		t.Errorf("user.LoginName should be '%s', we got '%s'", loginName, user.LoginName)
+	}
+
+	userTypeId := 1
+	if user.UserType.UserTypeId != userTypeId {
+		t.Errorf("user.UserType.UserTypeId should be '%d', we got '%d'", userTypeId, user.UserType.UserTypeId)
+	}
+
+	userTypeName := "normal_user"
+	if user.UserType.UserTypeName != userTypeName {
+		t.Errorf("user.UserType.UserTypeName should be '%s', we got '%s'", userTypeName, user.UserType.UserTypeName)
+	}
+
+	decimalSeparator := "."
+	if user.NumberFormat.DecimalSeparator != decimalSeparator {
+		t.Errorf("user.NumberFormat.DecimalSeparator should be '%s', we got '%s'", decimalSeparator, user.NumberFormat.DecimalSeparator)
+	}
+
+	groupingSeparator := ","
+	if user.NumberFormat.GroupingSeparator != groupingSeparator {
+		t.Errorf("user.NumberFormat.GroupingSeparator should be '%s', we got '%s'", groupingSeparator, user.NumberFormat.GroupingSeparator)
+	}
+
+	groupPattern := "###,##0.##"
+	if user.NumberFormat.GroupPattern != groupPattern {
+		t.Errorf("user.NumberFormat.GroupPattern should be '%s', we got '%s'", groupPattern, user.NumberFormat.GroupPattern)
+	}
+}
+
+func TestDecodeSlicePath(t *testing.T) {
+	var document = `[{"name":"bill"},{"name":"lisa"}]`
+
+	type NameDoc struct {
+		Name string `jpath:"name"`
+	}
+
+	sliceScript := []byte(document)
+	var sliceMap []map[string]interface{}
+	json.Unmarshal(sliceScript, &sliceMap)
+
+	var myslice1 []NameDoc
+	err1 := DecodeSlicePath(sliceMap, &myslice1)
+
+	var myslice2 []*NameDoc
+	err2 := DecodeSlicePath(sliceMap, &myslice2)
+
+	name1 := "bill"
+	name2 := "lisa"
+
+	if err1 != nil {
+		t.Fatal(err1)
+	}
+
+	if err2 != nil {
+		t.Fatal(err1)
+	}
+
+	if myslice1[0].Name != name1 {
+		t.Errorf("myslice1[0].Name should be '%s', we got '%s'", name1, myslice1[0].Name)
+	}
+
+	if myslice1[1].Name != name2 {
+		t.Errorf("myslice1[1].Name should be '%s', we got '%s'", name1, myslice1[1].Name)
+	}
+
+	if myslice2[0].Name != name1 {
+		t.Errorf("myslice2[0].Name should be '%s', we got '%s'", name1, myslice1[0].Name)
+	}
+
+	if myslice2[1].Name != name2 {
+		t.Errorf("myslice1[1].Name should be '%s', we got '%s'", name2, myslice2[1].Name)
+	}
+}
+
+func TestDecodeWithEmbeddedSlice(t *testing.T) {
+	var document string = `{
+		"cobrandId": 10010352,
+		"channelId": -1,
+		"locale": "en_US",
+		"tncVersion": 2,
+		"categories":["rabbit","bunny","frog"],
+		"people": [
+			{
+				"name": "jack",
+				"age": {
+				"birth":10,
+				"year":2000,
+				"animals": [
+					{
+					"barks":"yes",
+					"tail":"yes"
+					},
+					{
+					"barks":"no",
+					"tail":"yes"
+					}
+				]
+			}
+			},
+			{
+				"name": "jill",
+				"age": {
+					"birth":11,
+					"year":2001
+				}
+			}
+		]
+}`
+
+	type Animal struct {
+		Barks string `jpath:"barks"`
+	}
+
+	type People struct {
+		Age     int      `jpath:"age.birth"`
+		Animals []Animal `jpath:"age.animals"`
+	}
+
+	type Items struct {
+		Categories []string `jpath:"categories"`
+		Peoples    []People `jpath:"people"`
+	}
+
+	docScript := []byte(document)
+	var docMap map[string]interface{}
+	json.Unmarshal(docScript, &docMap)
+
+	items := Items{}
+	DecodePath(docMap, &items)
+
+	if len(items.Categories) != 3 {
+		t.Error("items.Categories did not decode")
+		return
+	}
+
+	if len(items.Peoples) != 2 {
+		t.Error("items.Peoples did not decode")
+		return
+	}
+
+	if len(items.Peoples[0].Animals) != 2 {
+		t.Error("items.Peoples[0].Animals did not decode")
+		return
+	}
+
+	age := 10
+	if items.Peoples[0].Age != 10 {
+		t.Errorf("items.Peoples[0].Age should be '%d', we got '%s'", age, items.Peoples[0].Age)
+	}
+
+	barks := "yes"
+	if items.Peoples[0].Animals[0].Barks != barks {
+		t.Errorf("items.Peoples[0].Animals[0].Barks should be '%d', we got '%s'", barks, items.Peoples[0].Animals[0].Barks)
+	}
+}
+
+func TestDecodeWithAbstractField(t *testing.T) {
+	var document = `{"Error":[{"errorDetail":"Invalid Cobrand Credentials"}]}`
+
+	type AnError struct {
+		Error []map[string]interface{} `jpath:"Error"`
+	}
+
+	type Context struct {
+		*AnError
+	}
+
+	docScript := []byte(document)
+	var docMap map[string]interface{}
+	json.Unmarshal(docScript, &docMap)
+
+	context := Context{}
+	DecodePath(docMap, &context)
+
+	errorDetail := "Invalid Cobrand Credentials"
+	if context.Error[0]["errorDetail"].(string) != errorDetail {
+		t.Errorf("context.Error[0][\"errorDetail\"] should be '%s', we got '%s'", errorDetail, context.Error[0]["errorDetail"].(string))
+	}
+}
+
+func TestDecodePointerToPointer(t *testing.T) {
+	var document = `{"Error":[{"errorDetail":"Invalid Cobrand Credentials"}]}`
+
+	type AnError struct {
+		Error []map[string]interface{} `jpath:"Error"`
+	}
+
+	type APointerError struct {
+		*AnError
+	}
+
+	type Context struct {
+		*APointerError
+	}
+
+	docScript := []byte(document)
+	var docMap map[string]interface{}
+	json.Unmarshal(docScript, &docMap)
+
+	var context Context
+	DecodePath(docMap, &context)
+
+	errorDetail := "Invalid Cobrand Credentials"
+	if context.Error != nil {
+		if context.Error[0]["errorDetail"].(string) != errorDetail {
+			t.Errorf("context.Error[0][\"errorDetail\"] should be '%s', we got '%s'", errorDetail, context.Error[0]["errorDetail"].(string))
+		}
+	}
+}
