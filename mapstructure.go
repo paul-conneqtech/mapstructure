@@ -296,7 +296,7 @@ func NewPathDecoder(config *DecoderConfig) (*Decoder, error) {
 	}
 
 	if config.TagName == "" {
-		config.TagName = "mapstructure"
+		config.TagName = "jpath"
 	}
 
 	result := &Decoder{
@@ -343,7 +343,7 @@ func (d *Decoder) DecodePath(m map[string]interface{}, rawVal interface{}) (bool
 		valueField := val.Field(i)
 		typeField := val.Type().Field(i)
 		tag := typeField.Tag
-		tagValue := tag.Get("jpath")
+		tagValue := tag.Get(d.config.TagName)
 
 		// Is this a field without a tag
 		if tagValue == "" {
