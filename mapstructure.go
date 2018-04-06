@@ -402,7 +402,7 @@ func (d *Decoder) DecodePath(m map[string]interface{}, rawVal interface{}) (bool
 						ms[index] = m2.(map[string]interface{})
 					}
 
-					DecodeSlicePath(ms, valueField.Addr().Interface())
+					d.DecodeSlicePath(ms, valueField.Addr().Interface())
 					continue
 				}
 			}
